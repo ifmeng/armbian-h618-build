@@ -1,38 +1,46 @@
-# Armbian H618 机顶盒编译工作流
+# Armbian H618 机顶盒编译工作流（修复路径问题）
 name: Build Armbian for H618 STB
 
-# 触发条件：手动触发（推荐）+ 推送到main分支时触发
 on:
-  workflow_dispatch:  # 手动触发（核心，在GitHub页面点按钮即可编译）
+  workflow_dispatch:  # 手动触发
   push:
     branches: [ main ]
     paths:
       - '.github/workflows/armbian-build.yml'
       - 'config/boards/sun50i-h618-stb.conf'
 
-# 运行环境
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 必须用22.04，Armbian官方推荐
+    runs-on: ubuntu-22.04
     permissions:
-      contents: write  # 允许上传编译产物到GitHub Releases
+      contents: write
 
     steps:
-      # 步骤1：检出Armbian源码 + 我们的配置文件
-      - name: Checkout Armbian and config
+      # 步骤1：先检出「你的仓库」（包含配置文件）到当前目录
+      - name: Checkout your repo (config files)
         uses: actions/checkout@v4
         with:
-          repository: armbian/build  # 拉取Armbian官方源码
+          path: my-repo  # 把你的仓库检出到 my-repo 目录
+
+      # 步骤2：再检出 Armbian 源码到 build 目录
+      - name: Checkout Armbian build repo
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
           path: build
           fetch-depth: 1
 
-      # 步骤2：把我们的H618配置文件复制到Armbian源码对应目录
-      - name: Copy H618 board config
+      # 步骤3：复制配置文件（明确指定从 my-repo 目录读取）
+      - name: Copy H618 board config (修复路径)
         run: |
+          # 先创建目录（确保存在）
           mkdir -p build/config/boards
-          cp config/boards/sun50i-h618-stb.conf build/config/boards/
+          # 从 my-repo 目录复制配置文件（关键修复）
+          cp my-repo/config/boards/sun50i-h618-stb.conf build/config/boards/
+          # 验证文件是否复制成功（方便排查）
+          ls -l build/config/boards/
 
-      # 步骤3：安装Armbian编译依赖
+      # 步骤4：安装依赖
       - name: Install dependencies
         run: |
           cd build
@@ -40,11 +48,10 @@ jobs:
           sudo apt update -y
           sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      # 步骤4：开始编译Armbian固件
+      # 步骤5：编译固件
       - name: Build Armbian image
         run: |
           cd build
-          # 核心编译命令（参数对应我们的H618配置）
           sudo ./compile.sh \
             BOARD=sun50i-h618-stb \
             BRANCH=current \
@@ -54,10 +61,10 @@ jobs:
             KERNEL_ONLY=no \
             KERNEL_CONFIGURE=no
 
-      # 步骤5：上传编译好的固件到GitHub Releases
+      # 步骤6：上传固件
       - name: Upload image to Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: build/output/images/*.img*  # 上传所有镜像文件
-          tag_name: h618-build-${{ github.run_id }}  # 自动生成版本号
-        if: success()  # 仅编译成功时上传
+          files: build/output/images/*.img*
+          tag_name: h618-build-${{ github.run_id }}
+        if: success()
