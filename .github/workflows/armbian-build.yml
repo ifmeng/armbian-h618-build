@@ -1,0 +1,63 @@
+# Armbian H618 机顶盒编译工作流
+name: Build Armbian for H618 STB
+
+# 触发条件：手动触发（推荐）+ 推送到main分支时触发
+on:
+  workflow_dispatch:  # 手动触发（核心，在GitHub页面点按钮即可编译）
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/armbian-build.yml'
+      - 'config/boards/sun50i-h618-stb.conf'
+
+# 运行环境
+jobs:
+  build:
+    runs-on: ubuntu-22.04  # 必须用22.04，Armbian官方推荐
+    permissions:
+      contents: write  # 允许上传编译产物到GitHub Releases
+
+    steps:
+      # 步骤1：检出Armbian源码 + 我们的配置文件
+      - name: Checkout Armbian and config
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build  # 拉取Armbian官方源码
+          path: build
+          fetch-depth: 1
+
+      # 步骤2：把我们的H618配置文件复制到Armbian源码对应目录
+      - name: Copy H618 board config
+        run: |
+          mkdir -p build/config/boards
+          cp config/boards/sun50i-h618-stb.conf build/config/boards/
+
+      # 步骤3：安装Armbian编译依赖
+      - name: Install dependencies
+        run: |
+          cd build
+          sudo ./scripts/prepare-host.sh
+          sudo apt update -y
+          sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      # 步骤4：开始编译Armbian固件
+      - name: Build Armbian image
+        run: |
+          cd build
+          # 核心编译命令（参数对应我们的H618配置）
+          sudo ./compile.sh \
+            BOARD=sun50i-h618-stb \
+            BRANCH=current \
+            RELEASE=bookworm \
+            BUILD_MINIMAL=no \
+            BUILD_DESKTOP=no \
+            KERNEL_ONLY=no \
+            KERNEL_CONFIGURE=no
+
+      # 步骤5：上传编译好的固件到GitHub Releases
+      - name: Upload image to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/output/images/*.img*  # 上传所有镜像文件
+          tag_name: h618-build-${{ github.run_id }}  # 自动生成版本号
+        if: success()  # 仅编译成功时上传
